@@ -10,3 +10,5 @@ data/db/*.sqlite
 # OS
 .DS_Store
 Thumbs.db
+
+study/
