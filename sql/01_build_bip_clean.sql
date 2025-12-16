@@ -1,9 +1,18 @@
+-- Rebuild the cleaned balls-in-play table
+-- This table defines the universe of events used in all downstream analysis
+
 DROP TABLE IF EXISTS bip_clean;
 
 CREATE TABLE bip_clean AS
+
+-- Step 1: Pull relevant fields from raw Statcast
+-- and construct a unique ID for each ball in play
 WITH base AS (
   SELECT
-    CAST(game_pk AS TEXT) || '-' || CAST(at_bat_number AS TEXT) || '-' || CAST(pitch_number AS TEXT) AS bip_id,
+    -- Unique identifier for each ball in play
+    CAST(game_pk AS TEXT) || '-' ||
+    CAST(at_bat_number AS TEXT) || '-' ||
+    CAST(pitch_number AS TEXT) AS bip_id,
 
     season,
     game_date,
@@ -20,11 +29,13 @@ WITH base AS (
     launch_angle,
     bb_type,
 
+    -- Statcast spray coordinates
     hc_x AS hit_x,
     hc_y AS hit_y,
 
     events,
 
+    -- Defensive alignments
     if_fielding_alignment AS if_alignment,
     of_fielding_alignment AS of_alignment,
 
@@ -35,6 +46,9 @@ WITH base AS (
     description
   FROM raw_statcast
 ),
+
+-- Step 2: Keep only true balls in play
+-- This removes walks, strikeouts, HBP, etc.
 bip_only AS (
   SELECT *
   FROM base
@@ -43,16 +57,31 @@ bip_only AS (
     AND hit_x IS NOT NULL
     AND hit_y IS NOT NULL
 ),
+
+-- Step 3: Label outcomes
+-- is_out is the primary response variable
+-- hit_value is kept for potential future extensions
 labeled AS (
   SELECT
     *,
     CASE
       WHEN events IN (
-        'field_out','force_out','grounded_into_double_play','double_play','triple_play',
-        'fielders_choice_out','sac_fly','sac_fly_double_play','sac_bunt_double_play','sac_bunt','strikeout_double_play'
+        'field_out',
+        'force_out',
+        'grounded_into_double_play',
+        'double_play',
+        'triple_play',
+        'fielders_choice_out',
+        'sac_fly',
+        'sac_fly_double_play',
+        'sac_bunt_double_play',
+        'sac_bunt',
+        'strikeout_double_play'
       ) THEN 1
       ELSE 0
     END AS is_out,
+
+    -- Simple hit value encoding
     CASE
       WHEN events = 'single' THEN 1
       WHEN events = 'double' THEN 2
@@ -62,6 +91,9 @@ labeled AS (
     END AS hit_value
   FROM bip_only
 )
+
+-- Step 4: Final column selection
+-- Home runs are excluded since they are not fieldable
 SELECT
   bip_id,
   season,
